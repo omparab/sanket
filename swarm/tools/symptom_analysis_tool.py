@@ -1,72 +1,66 @@
 """
-ADK Tool: Symptom Analysis (Real ADK API)
-Agent uses this to analyze local symptom patterns
+Symptom Analysis Tool
+Simple Python function for ADK to use as a FunctionTool
 """
 
-from google.adk.tools import BaseTool
-from typing import Any
-from pydantic import BaseModel, Field
-
-class SymptomAnalysisInput(BaseModel):
-    """Input schema for symptom analysis"""
-    symptom_reports: list[dict] = Field(description="Recent symptom reports to analyze")
-    baseline_threshold: float = Field(default=2.0, description="Normal baseline for comparison")
-
-class AnalyzeSymptomsToolTool(BaseTool):
+def analyze_symptoms_tool(symptoms: list, history_count: int = 0) -> dict:
     """
-    Tool for analyzing symptom patterns in village data
-    Uses real Google ADK BaseTool
+    Analyze symptom patterns for disease outbreak anomalies.
+    
+    Args:
+        symptoms: List of reported symptoms (e.g., ['fever', 'headache', 'vomiting'])
+        history_count: Number of previous symptom reports in this village
+    
+    Returns:
+        dict: Analysis result containing anomaly detection and recommendations
     """
+    # High-risk symptoms that indicate potential outbreak
+    high_risk_symptoms = [
+        'fever', 'vomiting', 'diarrhea', 'rash', 'breathing difficulty',
+        'body pain', 'fatigue', 'nausea', 'cough'
+    ]
     
-    input_schema: type[BaseModel] = SymptomAnalysisInput
+    # Normalize and check symptoms
+    symptoms_lower = [s.lower().strip() for s in symptoms]
+    detected_high_risk = [s for s in symptoms_lower if s in high_risk_symptoms]
     
-    def __init__(self, **kwargs):
-        super().__init__(
-            name="analyze_symptoms",
-            description="""Analyze symptom patterns in local village data.
+    # Calculate anomaly score
+    anomaly_score = len(detected_high_risk) / max(len(symptoms), 1)
     
-Use this tool to:
-- Detect anomalies in symptom reports
-- Identify disease patterns
-- Calculate risk levels
-- Determine if further investigation needed
+    # Determine if this is an anomaly
+    is_anomaly = (
+        anomaly_score > 0.5 or 
+        history_count > 5 or 
+        len(detected_high_risk) >= 3
+    )
+    
+    # Determine risk level
+    if anomaly_score > 0.7 or history_count > 10:
+        risk_level = "critical"
+    elif anomaly_score > 0.5 or history_count > 7:
+        risk_level = "high"
+    elif anomaly_score > 0.3 or history_count > 4:
+        risk_level = "medium"
+    else:
+        risk_level = "low"
+    
+    return {
+        "status": "analyzed",
+        "anomaly_detected": is_anomaly,
+        "anomaly_score": round(anomaly_score, 2),
+        "risk_level": risk_level,
+        "high_risk_symptoms_found": detected_high_risk,
+        "total_symptoms": len(symptoms),
+        "history_count": history_count,
+        "recommendation": "escalate_to_neighbors" if is_anomaly else "continue_monitoring"
+    }
 
-Input: List of recent symptom reports
-Output: Analysis with anomaly detection and risk assessment
-""",
-            **kwargs
-        )
+
+# Legacy class for backward compatibility
+class AnalyzeSymptomsToolTool:
+    """Legacy wrapper - use analyze_symptoms_tool function instead"""
+    def __init__(self):
+        pass
     
-    async def run(self, symptom_reports: list[dict], baseline_threshold: float = 2.0, **kwargs) -> dict[str, Any]:
-        """
-        Execute symptom analysis (ADK tool execution method)
-        """
-        # Count symptom occurrences
-        symptom_counts = {}
-        for report in symptom_reports:
-            for symptom in report.get('symptoms', []):
-                symptom_counts[symptom] = symptom_counts.get(symptom, 0) + 1
-        
-        # Detect anomaly
-        total_cases = len(symptom_reports)
-        anomaly_detected = total_cases > baseline_threshold
-        
-        # Calculate risk
-        if total_cases > baseline_threshold * 3:
-            risk_level = "high"
-        elif total_cases > baseline_threshold * 1.5:
-            risk_level = "medium"
-        else:
-            risk_level = "low"
-        
-        # Identify dominant pattern
-        dominant_symptom = max(symptom_counts.items(), key=lambda x: x[1])[0] if symptom_counts else None
-        
-        return {
-            "anomaly_detected": anomaly_detected,
-            "risk_level": risk_level,
-            "total_cases": total_cases,
-            "symptom_breakdown": symptom_counts,
-            "dominant_pattern": dominant_symptom,
-            "recommendation": "query_neighbors" if anomaly_detected else "continue_monitoring"
-        }
+    async def run(self, symptoms: list, history_count: int = 0) -> dict:
+        return analyze_symptoms_tool(symptoms, history_count)

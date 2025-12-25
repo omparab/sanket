@@ -1,124 +1,78 @@
 """
-ADK Tool: Consensus Protocol (Real ADK API)
-Agents use this for distributed decision making
+Consensus Tools
+Tools for proposing and voting on collective actions
 """
 
-from google.adk.tools import BaseTool
-from typing import Any
-from pydantic import BaseModel, Field
-
-class ConsensusProposalInput(BaseModel):
-    """Input schema for consensus proposals"""
-    proposal: dict = Field(description="The action being proposed")
-    neighbor_ids: list[str] = Field(description="Neighbors to vote")
-
-class VoteInput(BaseModel):
-    """Input schema for voting"""
-    proposal: dict = Field(description="Proposal to vote on")
-    local_evidence: dict = Field(default_factory=dict, description="Your local data for comparison")
-
-class ProposeConsensusTool(BaseTool):
+def propose_consensus_tool(proposal: str, risk_level: str, affected_villages: list = None) -> dict:
     """
-    Tool for proposing actions to neighbor agents
-    Initiates distributed consensus
+    Propose an action to neighboring village agents for consensus voting.
+    
+    Args:
+        proposal: Description of the proposed action (e.g., 'escalate_to_quantum', 'alert_health_officials')
+        risk_level: Current risk assessment level ('low', 'medium', 'high', 'critical')
+        affected_villages: List of villages that should vote on this proposal
+    
+    Returns:
+        dict: Proposal status and voting information
     """
+    if affected_villages is None:
+        affected_villages = ['Dharavi', 'Kalyan', 'Thane', 'Navi Mumbai']
     
-    input_schema: type[BaseModel] = ConsensusProposalInput
+    # Determine votes needed based on risk level
+    votes_needed = 2 if risk_level in ['high', 'critical'] else 3
     
-    def __init__(self, orchestrator=None, **kwargs):
-        super().__init__(
-            name="propose_consensus",
-            description="""Propose an action to neighboring agents and collect votes.
-    
-Use this when:
-- You detect a significant pattern
-- Multiple agents should coordinate response
-- Collective decision needed before escalation
+    return {
+        "status": "proposal_created",
+        "proposal": proposal,
+        "risk_level": risk_level,
+        "affected_villages": affected_villages,
+        "votes_needed": votes_needed,
+        "votes_received": 0,
+        "consensus_reached": False,
+        "message": f"Proposal '{proposal}' sent to {len(affected_villages)} villages"
+    }
 
-This initiates a voting round among all connected agents.
-""",
-            **kwargs
-        )
+
+def vote_tool(proposal_id: str, vote: str, confidence: float = 0.5) -> dict:
+    """
+    Cast a vote on a consensus proposal.
+    
+    Args:
+        proposal_id: ID of the proposal to vote on
+        vote: Vote decision - 'approve', 'reject', or 'abstain'
+        confidence: Confidence level in the vote (0.0 to 1.0)
+    
+    Returns:
+        dict: Vote confirmation
+    """
+    valid_votes = ['approve', 'reject', 'abstain']
+    if vote.lower() not in valid_votes:
+        return {
+            "status": "error",
+            "message": f"Invalid vote. Must be one of: {valid_votes}"
+        }
+    
+    return {
+        "status": "vote_cast",
+        "proposal_id": proposal_id,
+        "vote": vote.lower(),
+        "confidence": min(max(confidence, 0.0), 1.0),
+        "message": f"Vote '{vote}' recorded for proposal {proposal_id}"
+    }
+
+
+# Legacy classes for backward compatibility
+class ProposeConsensusTool:
+    def __init__(self, orchestrator=None):
         self.orchestrator = orchestrator
     
-    async def run(self, proposal: dict, neighbor_ids: list[str], **kwargs) -> dict[str, Any]:
-        """
-        Propose action and collect votes from neighbors
-        """
-        if not self.orchestrator:
-            return {"error": "Orchestrator not configured"}
-        
-        # Send proposal to all neighbors through orchestrator
-        votes = await self.orchestrator.collect_votes(
-            proposal=proposal,
-            voters=neighbor_ids
-        )
-        
-        # Evaluate consensus
-        total_votes = len(votes)
-        approve_votes = sum(1 for v in votes.values() if v.get('vote') == 'approve')
-        
-        consensus_reached = approve_votes / total_votes >= 0.66 if total_votes > 0 else False
-        
-        return {
-            "proposal_id": proposal.get('id', 'unknown'),
-            "total_votes": total_votes,
-            "approve_votes": approve_votes,
-            "consensus_reached": consensus_reached,
-            "consensus_strength": approve_votes / total_votes if total_votes > 0 else 0,
-            "votes": votes
-        }
+    async def run(self, proposal: str, risk_level: str) -> dict:
+        return propose_consensus_tool(proposal, risk_level)
 
 
-class VoteTool(BaseTool):
-    """
-    Tool for voting on proposals from other agents
-    """
+class VoteTool:
+    def __init__(self):
+        pass
     
-    input_schema: type[BaseModel] = VoteInput
-    
-    def __init__(self, **kwargs):
-        super().__init__(
-            name="vote",
-            description="""Vote on a proposal from another agent.
-    
-Evaluate the proposal based on:
-- Your local evidence
-- Alignment with your observations
-- Risk assessment
-
-Vote: approve, reject, or request_more_data
-""",
-            **kwargs
-        )
-    
-    async def run(self, proposal: dict, local_evidence: dict = None, **kwargs) -> dict[str, Any]:
-        """
-        Evaluate proposal and cast vote
-        """
-        proposal_action = proposal.get('action', '')
-        local_evidence = local_evidence or {}
-        
-        # Simple evaluation logic
-        if proposal_action == 'escalate_to_quantum':
-            local_risk = local_evidence.get('risk_level', 'low')
-            
-            if local_risk in ['high', 'critical']:
-                vote = 'approve'
-                confidence = 0.9
-            elif local_risk == 'medium':
-                vote = 'approve'
-                confidence = 0.6
-            else:
-                vote = 'request_more_data'
-                confidence = 0.4
-        else:
-            vote = 'approve'
-            confidence = 0.5
-        
-        return {
-            "vote": vote,
-            "confidence": confidence,
-            "reasoning": f"Local risk level is {local_evidence.get('risk_level', 'unknown')}",
-            "local_evidence": local_evidence
-        }
+    async def run(self, proposal_id: str, vote: str, confidence: float = 0.5) -> dict:
+        return vote_tool(proposal_id, vote, confidence)

@@ -107,39 +107,61 @@ async def submit_symptom_report(
     image: Optional[UploadFile] = File(None)
 ):
     """
-    🔥 COMPLETE FLOW WITH ADK:
-    1. Gemini processes voice/image (Edge AI)
-    2. ADK agent receives data
-    3. Agent autonomously uses tools to analyze and communicate
-    4. Agent coordinates with neighbors via ADK orchestrator
-    5. If consensus reached, agent triggers quantum
+    Process symptom report with optional voice/image analysis.
+    
+    Flow:
+    1. Gemini processes voice/image (Edge AI) - ONLY for multimodal input
+    2. Swarm agent analyzes symptoms (rule-based - NO LLM)
+    3. If consensus, trigger quantum analysis
     """
     
     print(f"\n{'='*70}")
     print(f"📥 NEW SYMPTOM REPORT: Village {village_id}")
+    print(f"   Symptoms: {symptoms}")
+    print(f"   Has Voice: {voice is not None}")
+    print(f"   Has Image: {image is not None}")
     print(f"{'='*70}")
     
-    # STEP 1: Process with Gemini (Edge AI)
+    # STEP 1: Process with Gemini (Edge AI) - ONLY for voice/image
     edge_analysis = {}
     
     if voice:
-        voice_bytes = await voice.read()
-        voice_result = await gemini_processor.process_voice(voice_bytes)
-        edge_analysis['voice'] = voice_result
-        symptoms.extend(voice_result['symptoms_extracted'])
-        print(f"🎤 Voice processed: {voice_result['symptoms_extracted']}")
+        try:
+            voice_bytes = await voice.read()
+            print(f"🎤 Processing voice ({len(voice_bytes)} bytes)...")
+            voice_result = await gemini_processor.process_voice(voice_bytes)
+            edge_analysis['voice'] = voice_result
+            # Add extracted symptoms
+            extracted = voice_result.get('symptoms_extracted', [])
+            if extracted:
+                symptoms.extend(extracted)
+                print(f"   Extracted symptoms: {extracted}")
+        except Exception as e:
+            print(f"❌ Voice processing error: {e}")
+            edge_analysis['voice'] = {'error': str(e)}
     
     if image:
-        image_bytes = await image.read()
-        image_result = await gemini_processor.process_image(image_bytes)
-        edge_analysis['image'] = image_result
-        print(f"📷 Image analyzed: {image_result['detected_conditions']}")
+        try:
+            image_bytes = await image.read()
+            print(f"📷 Processing image ({len(image_bytes)} bytes)...")
+            image_result = await gemini_processor.process_image(image_bytes)
+            edge_analysis['image'] = image_result
+            print(f"   Detected conditions: {image_result.get('detected_conditions', [])}")
+            print(f"   Severity: {image_result.get('severity', 'unknown')}")
+            print(f"   Description: {image_result.get('description', 'N/A')[:100]}...")
+        except Exception as e:
+            print(f"❌ Image processing error: {e}")
+            edge_analysis['image'] = {'error': str(e)}
     
-    normalized = await gemini_processor.normalize_symptoms(symptoms, {})
-    edge_analysis['normalized'] = normalized
+    # Normalize symptoms (uses Gemini for translation/normalization)
+    try:
+        normalized = await gemini_processor.normalize_symptoms(symptoms, {})
+        edge_analysis['normalized'] = normalized
+    except Exception as e:
+        edge_analysis['normalized'] = {'error': str(e), 'original': symptoms}
     
-    # STEP 2: Send to ADK Swarm (Autonomous Agent Processing)
-    print(f"\n🤖 Sending to ADK Agent...")
+    # STEP 2: Send to Swarm Agent (Rule-based - NO LLM)
+    print(f"\n🤖 Sending to Swarm Agent (rule-based)...")
     
     adk_result = await adk_swarm_service.process_symptom_report(
         village_id=village_id,
@@ -147,30 +169,27 @@ async def submit_symptom_report(
         metadata={'edge_analysis': edge_analysis}
     )
     
-    print(f"✓ ADK Agent processed report")
-    print(f"  Actions taken: {adk_result.get('autonomous_actions_taken', [])}")
+    print(f"✓ Swarm Agent processed report")
+    print(f"   Risk Level: {adk_result.get('agent_response', {}).get('risk_level', 'unknown')}")
+    print(f"   Outbreak Belief: {adk_result.get('agent_response', {}).get('outbreak_belief', 0)}")
+    print(f"   Actions: {adk_result.get('autonomous_actions_taken', [])}")
     
-    # STEP 3: Check if agent triggered quantum escalation
+    # STEP 3: Check if quantum escalation triggered
     quantum_result = None
-    agent_response = adk_result.get('agent_response', {})
-    
-    if 'escalate_to_quantum' in adk_result.get('autonomous_actions_taken', []):
-        print(f"\n⚛️  ADK Agent triggered quantum analysis...")
-        
+    if 'escalated_to_quantum' in adk_result.get('autonomous_actions_taken', []):
+        print(f"\n⚛️ Quantum analysis triggered...")
         swarm_data = adk_swarm_service.get_network_status()
         quantum_result = await quantum_service.detect_outbreak_pattern(swarm_data)
-        
-        print(f"✓ Quantum analysis complete")
-        print(f"  Outbreak probability: {quantum_result['outbreak_probability']:.2f}")
+        print(f"   Outbreak probability: {quantum_result.get('outbreak_probability', 0):.2f}")
     
     print(f"{'='*70}\n")
     
     return {
         'status': 'processed',
         'edge_analysis': edge_analysis,
-        'adk_agent_response': adk_result,
+        'swarm_response': adk_result,
         'quantum_analysis': quantum_result,
-        'workflow': 'adk_autonomous'
+        'workflow': 'rule_based_swarm'
     }
 
 # ============================================================================
@@ -213,6 +232,15 @@ async def get_network_topology():
     return {
         'topology': status['network_topology'],
         'total_agents': status['total_agents']
+    }
+
+@app.get("/api/v1/swarm/communications")
+async def get_swarm_communications(limit: int = 50):
+    """Get recent inter-agent communications for visualization"""
+    return {
+        'communications': adk_swarm_service.orchestrator.get_communication_log(limit),
+        'total_agents': len(adk_swarm_service.orchestrator.agents),
+        'topology': adk_swarm_service.orchestrator.network_topology
     }
 
 # ============================================================================

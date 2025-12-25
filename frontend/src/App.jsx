@@ -54,6 +54,9 @@ const LoginPage = ({ onLogin }) => {
   const demoLogin = (demoRole) => {
     const demoUsers = {
       asha: { id: 'asha_001', name: 'Priya Sharma', email: 'priya@asha.gov.in', role: 'asha', village: 'Dharavi', phone: '+91 98765 43210' },
+      asha_kalyan: { id: 'asha_002', name: 'Sunita Patil', email: 'sunita@asha.gov.in', role: 'asha', village: 'Kalyan', phone: '+91 98765 43211' },
+      asha_thane: { id: 'asha_003', name: 'Meera Desai', email: 'meera@asha.gov.in', role: 'asha', village: 'Thane', phone: '+91 98765 43212' },
+      asha_navi: { id: 'asha_004', name: 'Rekha Singh', email: 'rekha@asha.gov.in', role: 'asha', village: 'Navi Mumbai', phone: '+91 98765 43213' },
       official: { id: 'official_001', name: 'Dr. Rajesh Kumar', email: 'rajesh@health.gov.in', role: 'official', district: 'Mumbai', designation: 'District Health Officer' }
     };
     onLogin(demoUsers[demoRole]);
@@ -86,9 +89,16 @@ const LoginPage = ({ onLogin }) => {
         <div className="mt-4 text-center"><button onClick={() => setIsSignup(!isSignup)} className="text-indigo-600 hover:underline">{isSignup ? 'Already have an account? Login' : "Don't have an account? Sign Up"}</button></div>
         <div className="mt-6 pt-6 border-t border-gray-200">
           <p className="text-sm text-gray-600 text-center mb-3">Quick Demo Access</p>
-          <div className="flex gap-2">
-            <button onClick={() => demoLogin('asha')} className="flex-1 py-2 bg-blue-100 text-blue-700 rounded-lg text-sm font-medium">Demo ASHA</button>
-            <button onClick={() => demoLogin('official')} className="flex-1 py-2 bg-purple-100 text-purple-700 rounded-lg text-sm font-medium">Demo Official</button>
+          <div className="space-y-2">
+            <div className="flex gap-2">
+              <button onClick={() => demoLogin('asha')} className="flex-1 py-2 bg-blue-100 text-blue-700 rounded-lg text-sm font-medium">Dharavi ASHA</button>
+              <button onClick={() => demoLogin('asha_kalyan')} className="flex-1 py-2 bg-blue-100 text-blue-700 rounded-lg text-sm font-medium">Kalyan ASHA</button>
+            </div>
+            <div className="flex gap-2">
+              <button onClick={() => demoLogin('asha_thane')} className="flex-1 py-2 bg-blue-100 text-blue-700 rounded-lg text-sm font-medium">Thane ASHA</button>
+              <button onClick={() => demoLogin('asha_navi')} className="flex-1 py-2 bg-blue-100 text-blue-700 rounded-lg text-sm font-medium">Navi Mumbai ASHA</button>
+            </div>
+            <button onClick={() => demoLogin('official')} className="w-full py-2 bg-purple-100 text-purple-700 rounded-lg text-sm font-medium">Health Official</button>
           </div>
         </div>
       </div>
@@ -198,6 +208,85 @@ const ASHAInterface = ({ user, onLogout }) => {
   );
 };
 
+// Agent Communications Component
+const AgentCommunications = () => {
+  const [comms, setComms] = useState([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    const fetchComms = async () => {
+      try {
+        const data = await api.get('/api/v1/swarm/communications?limit=50');
+        setComms(data.communications || []);
+      } catch (err) {
+        console.error('Failed to fetch communications:', err);
+      }
+      setLoading(false);
+    };
+    fetchComms();
+    const interval = setInterval(fetchComms, 5000);
+    return () => clearInterval(interval);
+  }, []);
+
+  const getTypeColor = (type) => {
+    const colors = {
+      'symptom_report': 'bg-blue-100 text-blue-800',
+      'status_query': 'bg-yellow-100 text-yellow-800',
+      'status_response': 'bg-green-100 text-green-800',
+      'consensus_proposal': 'bg-purple-100 text-purple-800',
+      'vote': 'bg-indigo-100 text-indigo-800',
+      'quantum_escalation': 'bg-red-100 text-red-800',
+      'quantum_trigger': 'bg-red-100 text-red-800',
+      'quantum_result': 'bg-pink-100 text-pink-800',
+      'workflow_trigger': 'bg-orange-100 text-orange-800',
+      'belief_share': 'bg-cyan-100 text-cyan-800',
+      'collective_decision': 'bg-emerald-100 text-emerald-800'
+    };
+    return colors[type] || 'bg-gray-100 text-gray-800';
+  };
+
+  if (loading) return <div className="text-center py-8">Loading communications...</div>;
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center justify-between">
+        <h2 className="text-xl font-bold text-gray-900">Agent Communications Log</h2>
+        <span className="text-sm text-gray-500">{comms.length} messages</span>
+      </div>
+      <p className="text-sm text-gray-600">Real-time inter-agent communication showing how swarm intelligence emerges from simple message passing.</p>
+      <div className="bg-white rounded-xl shadow-sm divide-y max-h-96 overflow-y-auto">
+        {comms.length === 0 ? (
+          <div className="p-8 text-center text-gray-500">No communications yet. Submit symptom reports to see agent interactions.</div>
+        ) : (
+          comms.slice().reverse().map((msg, idx) => (
+            <div key={idx} className="p-4 hover:bg-gray-50">
+              <div className="flex items-center gap-2 mb-2">
+                <span className="font-semibold text-gray-900">{msg.from}</span>
+                <span className="text-gray-400">→</span>
+                <span className="font-semibold text-gray-900">{msg.to}</span>
+                <span className={`px-2 py-1 rounded text-xs font-medium ${getTypeColor(msg.type)}`}>{msg.type.replace(/_/g, ' ')}</span>
+              </div>
+              <div className="text-sm text-gray-600 bg-gray-50 rounded p-2">
+                {JSON.stringify(msg.content, null, 0).slice(0, 150)}
+              </div>
+              <div className="text-xs text-gray-400 mt-1">{new Date(msg.timestamp).toLocaleTimeString()}</div>
+            </div>
+          ))
+        )}
+      </div>
+      <div className="bg-indigo-50 rounded-lg p-4">
+        <h3 className="font-semibold text-indigo-900 mb-2">How Swarm Intelligence Works</h3>
+        <ul className="text-sm text-indigo-800 space-y-1">
+          <li>• Agents communicate via simple messages (no LLM)</li>
+          <li>• Each agent updates beliefs based on local data + neighbor info</li>
+          <li>• Consensus emerges from collective voting</li>
+          <li>• Quantum analysis triggered only when consensus reached</li>
+        </ul>
+      </div>
+    </div>
+  );
+};
+
 const OfficialDashboard = ({ user, onLogout }) => {
   const [activeView, setActiveView] = useState('overview');
   const [loading, setLoading] = useState(true);
@@ -269,7 +358,7 @@ const OfficialDashboard = ({ user, onLogout }) => {
       </header>
       <div className="bg-white border-b">
         <div className="max-w-7xl mx-auto px-4 flex gap-1">
-          {['overview', 'alerts', 'swarm', 'quantum', 'map'].map(v => (<button key={v} onClick={() => setActiveView(v)} className={`px-4 py-3 font-medium capitalize ${activeView === v ? 'text-indigo-600 border-b-2 border-indigo-600' : 'text-gray-600'}`}>{v}</button>))}
+          {['overview', 'alerts', 'swarm', 'comms', 'quantum', 'map'].map(v => (<button key={v} onClick={() => setActiveView(v)} className={`px-4 py-3 font-medium capitalize ${activeView === v ? 'text-indigo-600 border-b-2 border-indigo-600' : 'text-gray-600'}`}>{v === 'comms' ? 'Agent Comms' : v}</button>))}
         </div>
       </div>
       <div className="max-w-7xl mx-auto px-4 py-6">
@@ -339,6 +428,10 @@ const OfficialDashboard = ({ user, onLogout }) => {
               ))}
             </div>
           </div>
+        )}
+
+        {activeView === 'comms' && (
+          <AgentCommunications />
         )}
 
         {activeView === 'quantum' && (

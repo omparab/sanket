@@ -57,36 +57,113 @@ Return as JSON with keys: symptoms_extracted, severity, duration, environmental_
         Process image (rash, symptoms) using Gemini Vision
         """
         try:
-            prompt = """Analyze this medical image for visible symptoms.
-
-Look for:
-1. Skin conditions (rash, lesions, discoloration)
-2. Visible signs of illness
-3. Severity assessment
-
-Return as JSON with keys: detected_conditions, severity, confidence, recommendations"""
-
-            # Convert bytes to PIL Image for Gemini
             from PIL import Image
-            image = Image.open(io.BytesIO(image_bytes))
+            import base64
             
+            print(f"   Image bytes length: {len(image_bytes)}")
+            print(f"   First 20 bytes: {image_bytes[:20]}")
+            
+            # Try to open with PIL first
+            try:
+                image = Image.open(io.BytesIO(image_bytes))
+                print(f"   PIL detected format: {image.format}, size: {image.size}")
+            except Exception as pil_error:
+                print(f"   PIL error: {pil_error}")
+                # If PIL fails, try sending raw bytes to Gemini with base64
+                # Gemini can handle base64 encoded images directly
+                image_b64 = base64.b64encode(image_bytes).decode('utf-8')
+                
+                # Detect mime type from bytes
+                mime_type = "image/jpeg"  # default
+                if image_bytes[:8] == b'\x89PNG\r\n\x1a\n':
+                    mime_type = "image/png"
+                elif image_bytes[:2] == b'\xff\xd8':
+                    mime_type = "image/jpeg"
+                elif image_bytes[:4] == b'RIFF' and image_bytes[8:12] == b'WEBP':
+                    mime_type = "image/webp"
+                
+                print(f"   Using base64 with mime type: {mime_type}")
+                
+                # Create image part for Gemini
+                image = {
+                    "mime_type": mime_type,
+                    "data": image_b64
+                }
+
+            prompt = """Analyze this medical/health-related image carefully.
+
+Look for and identify:
+1. Any visible skin conditions (rash, lesions, discoloration, swelling)
+2. Signs of illness or infection
+3. Environmental health hazards (if applicable)
+4. Severity assessment (mild/moderate/severe)
+
+Provide your analysis in this exact JSON format:
+{
+    "detected_conditions": ["condition1", "condition2"],
+    "severity": "mild/moderate/severe",
+    "confidence": 0.0-1.0,
+    "description": "brief description of what you see",
+    "recommendations": ["recommendation1", "recommendation2"]
+}
+
+If you cannot identify any medical conditions, return:
+{
+    "detected_conditions": [],
+    "severity": "none",
+    "confidence": 0.0,
+    "description": "No medical conditions detected in image",
+    "recommendations": []
+}"""
+
+            # Call Gemini Vision
             response = self.model.generate_content([prompt, image])
             
-            # Parse response (simplified)
-            return {
-                'detected_conditions': ['rash', 'skin_discoloration'],
-                'severity': 'moderate',
-                'confidence': 0.78,
-                'recommendations': ['medical_examination_recommended'],
-                'method': 'gemini_vision',
-                'raw_analysis': response.text
-            }
+            # Parse the response
+            result = self._parse_json_response(response.text)
+            result['method'] = 'gemini_vision'
+            result['raw_response'] = response.text[:500]  # Truncate for logging
+            
+            print(f"📷 Gemini Vision Analysis: {result.get('detected_conditions', [])}")
+            
+            return result
         
         except Exception as e:
+            import traceback
+            print(f"❌ Image processing error: {e}")
+            print(f"   Traceback: {traceback.format_exc()}")
             return {
                 'error': str(e),
                 'detected_conditions': [],
-                'confidence': 0.0
+                'severity': 'unknown',
+                'confidence': 0.0,
+                'description': f'Error processing image: {str(e)}',
+                'recommendations': []
+            }
+    
+    def _parse_json_response(self, text: str) -> Dict:
+        """Parse JSON from Gemini response"""
+        import json
+        try:
+            # Remove markdown code blocks if present
+            text = text.strip()
+            if text.startswith('```json'):
+                text = text[7:]
+            if text.startswith('```'):
+                text = text[3:]
+            if text.endswith('```'):
+                text = text[:-3]
+            text = text.strip()
+            
+            return json.loads(text)
+        except json.JSONDecodeError:
+            # If JSON parsing fails, extract what we can
+            return {
+                'detected_conditions': [],
+                'severity': 'unknown',
+                'confidence': 0.5,
+                'description': text[:500],  # First 500 chars of raw response
+                'recommendations': []
             }
     
     async def normalize_symptoms(self, symptoms: List[str], context: Dict) -> Dict:

@@ -38,15 +38,36 @@ class SwarmOrchestrator:
         
         print(f"✓ Swarm initialized: {len(self.agents)} ADK agents created")
     
+    def _resolve_village_id(self, village_id: str) -> str:
+        """Resolve village name to ID (accepts both 'Dharavi' and 'v1')"""
+        # Direct match
+        if village_id in self.agents:
+            return village_id
+        
+        # Match by name (case-insensitive)
+        village_id_lower = village_id.lower().replace(' ', '_')
+        for aid, agent in self.agents.items():
+            if agent.village_name.lower().replace(' ', '_') == village_id_lower:
+                return aid
+            if agent.village_name.lower() == village_id.lower():
+                return aid
+        
+        return None
+    
     async def process_symptom_report(self, village_id: str, symptoms: List[str], metadata: Dict) -> Dict:
         """
         Process symptom report through ADK agent
         Agent will autonomously handle analysis and communication
         """
-        if village_id not in self.agents:
-            raise ValueError(f"Village {village_id} not found")
+        resolved_id = self._resolve_village_id(village_id)
+        if not resolved_id:
+            # Default to first agent if village not found
+            resolved_id = list(self.agents.keys())[0] if self.agents else None
+            if not resolved_id:
+                raise ValueError(f"No agents available")
+            print(f"⚠️ Village '{village_id}' not found, using default: {resolved_id}")
         
-        agent = self.agents[village_id]
+        agent = self.agents[resolved_id]
         
         # Let ADK agent process this autonomously
         result = await agent.process_symptom_report(symptoms, metadata)
@@ -75,10 +96,11 @@ class SwarmOrchestrator:
         """
         Query a specific agent (used by QueryNeighborsTool)
         """
-        if agent_id not in self.agents:
+        resolved_id = self._resolve_village_id(agent_id)
+        if not resolved_id:
             return {"error": f"Agent {agent_id} not found"}
         
-        agent = self.agents[agent_id]
+        agent = self.agents[resolved_id]
         return await agent.receive_query(query_type, context)
     
     async def collect_votes(self, proposal: Dict, voters: List[str]) -> Dict:
@@ -137,4 +159,5 @@ Please use your 'vote' tool to cast your vote (approve, reject, or request_more_
     
     def get_agent(self, village_id: str):
         """Get specific agent"""
-        return self.agents.get(village_id)
+        resolved_id = self._resolve_village_id(village_id)
+        return self.agents.get(resolved_id) if resolved_id else None
